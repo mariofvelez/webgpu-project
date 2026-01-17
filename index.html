@@ -43,7 +43,6 @@
     </script>
     <script>
         const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
 
         function resizeCanvas() {
             const cssWidth = window.innerWidth;
@@ -55,8 +54,6 @@
             canvas.style.height = cssHeight + 'px';
             canvas.width = Math.floor(cssWidth * dpr);
             canvas.height = Math.floor(cssHeight * dpr);
-
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
 
         window.addEventListener('resize', resizeCanvas, { passive: true });
