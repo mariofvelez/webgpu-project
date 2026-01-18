@@ -18,6 +18,7 @@ wgpu = "28.0"
 pollster = "0.3"
 bytemuck = { version = "1.24", features = [ "derive" ] }
 cgmath = "0.18"
+tobj = { version = "3.2", default-features = false, features = ["async"]}
 
 [dependencies.image]
 version = "0.24"
@@ -34,7 +35,9 @@ web-sys = { version = "0.3", features = [
     "Document",
     "Window",
     "Element",
+    "Location",
 ]}
+reqwest = { version = "0.11" }
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false

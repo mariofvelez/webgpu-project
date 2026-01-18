@@ -44,9 +44,16 @@
     <script>
         const canvas = document.getElementById('canvas');
 
+        function getViewportSize() {
+            const vw = window.visualViewport;
+            return {
+                cssWidth: Math.round((vw?.width ?? window.innerWidth)),
+                cssHeight: Math.round((vw?.height ?? window.innerHeight)),
+            };
+        }
+
         function resizeCanvas() {
-            const cssWidth = window.innerWidth;
-            const cssHeight = window.innerHeight;
+            const { cssWidth, cssHeight } = getViewportSize();
 
             const dpr = Math.max(1, window.devicePixelRatio || 1);
 
