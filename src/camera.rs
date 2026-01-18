@@ -105,7 +105,7 @@ impl CameraController {
         let forward = camera.target - camera.eye;
         let forward_mag = forward.magnitude();
 
-        camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
+        camera.eye = camera.target - (forward + right * self.speed * 0.2).normalize() * forward_mag;
 
         if self.is_right_pressed {
             camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;

@@ -4,14 +4,24 @@ struct CameraUniform {
 @group(1) @binding(0)
 var<uniform> camera: CameraUniform;
 
+struct Light {
+	position: vec3<f32>,
+	color: vec3<f32>,
+};
+@group(2) @binding(0)
+var<uniform> light: Light;
+
 struct VertexInput {
 	@location(0) position: vec3<f32>,
 	@location(1) tex_coords: vec2<f32>,
+	@location(2) normal: vec3<f32>,
 };
 
 struct VertexOutput {
 	@builtin(position) clip_position: vec4<f32>,
-	@location(0) tex_coords: vec2<f32>,
+	@location(0) position: vec3<f32>,
+	@location(1) tex_coords: vec2<f32>,
+	@location(2) normal: vec3<f32>,
 };
 
 struct InstanceInput {
@@ -26,15 +36,17 @@ fn vs_main(
 	model: VertexInput,
 	instance: InstanceInput,
 ) -> VertexOutput {
-	let model_matrix = mat4x4<f32> (
-		instance.model_matrix_0,
-		instance.model_matrix_1,
-		instance.model_matrix_2,
-		instance.model_matrix_3,
+	let model_matrix = mat3x3<f32> (
+		instance.model_matrix_0.xyz,
+		instance.model_matrix_1.xyz,
+		instance.model_matrix_2.xyz,
 	);
 	var out: VertexOutput;
+	var world_pos = model_matrix * vec3<f32>(model.position) + instance.model_matrix_3.xyz;
+	out.position = world_pos.xyz;
 	out.tex_coords = model.tex_coords;
-	out.clip_position = camera.view_proj * model_matrix * vec4<f32>(model.position, 1.0);
+	out.normal = model_matrix * model.normal;
+	out.clip_position = camera.view_proj * vec4<f32>(world_pos, 1.0);
 	return out;
 }
 
@@ -46,5 +58,15 @@ var diffuse_sampler: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-	return textureSample(diffuse_texture, diffuse_sampler, in.tex_coords);
+	let obj_col = textureSample(diffuse_texture, diffuse_sampler, in.tex_coords);
+
+	//let ambient_strength = 0.1;
+	//let ambient_col = light.color * ambient_strength;
+
+	let light_dir = normalize(light.position - in.position);
+	let diffuse_strength = max(dot(in.normal, light_dir), 0.0);
+	let diffuse_col = light.color * diffuse_strength;
+
+	let result = diffuse_col * obj_col.xyz;
+	return vec4<f32>(result, obj_col.a);
 }
