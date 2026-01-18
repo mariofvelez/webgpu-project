@@ -17,7 +17,7 @@ fn format_url(filename: &str) -> reqwest::Url {
 pub async fn load_string(filename: &str) -> anyhow::Result<String> {
 	#[cfg(target_arch = "wasm32")]
 	let txt = {
-		let url = format_url(filename);
+		let url = format_url(&format!("src/res/{:?}", filename).as_str());
 		reqwest::get(url).await?.text().await?
 	};
 	#[cfg(not(target_arch = "wasm32"))]
@@ -31,7 +31,7 @@ pub async fn load_string(filename: &str) -> anyhow::Result<String> {
 pub async fn load_binary(filename: &str) -> anyhow::Result<Vec<u8>> {
 	#[cfg(target_arch = "wasm32")]
 	let data = {
-		let url = format_url(filename);
+		let url = format_url(&format!("src/res/{:?}", filename).as_str());
 		reqwest::get(url).await?.bytes().await?.to_vec()
 	};
 	#[cfg(not(target_arch = "wasm32"))]
