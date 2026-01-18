@@ -190,7 +190,7 @@ impl State {
 			eye: (0.0, 1.0, 2.0).into(),
 			target: (0.0, 0.0, 0.0).into(),
 			up: cgmath::Vector3::unit_y(),
-			aspect: 1.0,//config.width as f32 / config.height as f32,
+			aspect: config.width.max(1) as f32 / config.height.max(1) as f32,
 			fovy: 45.0,
 			znear: 0.1,
 			zfar: 100.0,
@@ -262,7 +262,7 @@ impl State {
 			label: Some("camera_bind_group"),
 		});
 
-		let camera_controller = camera::CameraController::new(0.2);
+		let camera_controller = camera::CameraController::new(0.02);
 
 		let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
 			label: Some("Shader"),
