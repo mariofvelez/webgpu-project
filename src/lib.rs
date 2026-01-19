@@ -93,9 +93,7 @@ pub struct State {
 	depth_texture: texture::Texture,
 
 	obj_model: model::Model,
-
-	diffuse_bind_group: wgpu::BindGroup,
-	diffuse_texture: texture::Texture,
+	
 
 	camera: camera::Camera,
 	camera_uniform: camera::CameraUniform,
@@ -217,12 +215,9 @@ impl State {
 			desired_maximum_frame_latency: 2,
 		};
 
-		let diffuse_bytes = include_bytes!("res/mr_eletric.png");
-		let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "mr_eletric.png").unwrap();
-
 		let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 			entries: &[
-				wgpu::BindGroupLayoutEntry {
+				wgpu::BindGroupLayoutEntry { // diffuse texture
 					binding: 0,
 					visibility: wgpu::ShaderStages::FRAGMENT,
 					ty: wgpu::BindingType::Texture {
@@ -232,8 +227,24 @@ impl State {
 					},
 					count: None,
 				},
-				wgpu::BindGroupLayoutEntry {
+				wgpu::BindGroupLayoutEntry { // diffuse sampler
 					binding: 1,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+					count: None,
+				},
+				wgpu::BindGroupLayoutEntry { // normal texture
+					binding: 2,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Texture {
+						multisampled: false,
+						view_dimension: wgpu::TextureViewDimension::D2,
+						sample_type: wgpu::TextureSampleType::Float {filterable: true},
+					},
+					count: None,
+				},
+				wgpu::BindGroupLayoutEntry { // normal sampler
+					binding: 3,
 					visibility: wgpu::ShaderStages::FRAGMENT,
 					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
 					count: None,
@@ -242,22 +253,7 @@ impl State {
 			label: Some("texture_bind_group_layout"),
 		});
 
-		let diffuse_bind_group = device.create_bind_group(
-			&wgpu::BindGroupDescriptor {
-				layout: &texture_bind_group_layout,
-				entries: &[
-					wgpu::BindGroupEntry {
-						binding: 0,
-						resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-					},
-					wgpu::BindGroupEntry {
-						binding: 1,
-						resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-					},
-				],
-				label: Some("diffuse_bind_group"),
-			}
-		);
+
 
 		let camera = camera::Camera {
 			eye: (0.0, 2.0, 4.0).into(),
@@ -336,11 +332,6 @@ impl State {
 		});
 
 		let camera_controller = camera::CameraController::new(0.02);
-
-		let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-			label: Some("Shader"),
-			source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-		});
 
 		let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture");
 
@@ -442,8 +433,6 @@ impl State {
 			light_render_pipeline,
 			depth_texture,
 			obj_model,
-			diffuse_bind_group,
-			diffuse_texture,
 			camera,
 			camera_uniform,
 			camera_buffer,

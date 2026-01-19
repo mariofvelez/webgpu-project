@@ -42,9 +42,66 @@ pub async fn load_binary(filename: &str) -> anyhow::Result<Vec<u8>> {
 	Ok(data)
 }
 
-pub async fn load_texture(filename: &str, device: &wgpu::Device, queue: &wgpu::Queue) -> anyhow::Result<texture::Texture> {
+pub async fn load_texture(filename: &str, ty: texture::TextureType, device: &wgpu::Device, queue: &wgpu::Queue) -> anyhow::Result<texture::Texture> {
 	let data = load_binary(filename).await?;
-	texture::Texture::from_bytes(device, queue, &data, filename)
+	texture::Texture::from_bytes(device, queue, &data, filename, ty)
+}
+
+struct TobjGeometry<'a> {
+	vertices: Vec<model::ModelVertex>,
+	indices: &'a Vec<u32>,
+}
+
+impl<'a> TobjGeometry<'a> {
+	fn from_tobj_mesh(tobj_mesh: &'a tobj::Mesh) -> Self {
+		Self {
+			vertices: (0..tobj_mesh.positions.len() / 3).map(|i| {
+				model::ModelVertex {
+				position: [
+					tobj_mesh.positions[i * 3],
+					tobj_mesh.positions[i * 3 + 1],
+					tobj_mesh.positions[i * 3 + 2],
+				],
+				tex_coords: [
+					tobj_mesh.texcoords[i * 2],
+					1.0 - tobj_mesh.texcoords[i * 2 + 1],
+				],
+				normal: [
+					tobj_mesh.normals[i * 3],
+					tobj_mesh.normals[i * 3 + 1],
+					tobj_mesh.normals[i * 3 + 2],
+				],
+				tangent: [0.0; 4],
+			}
+			}).collect::<Vec<_>>(),
+			indices: &tobj_mesh.indices,
+		}
+	}
+}
+
+impl <'a>mikktspace::Geometry for TobjGeometry<'a> {
+	fn num_faces(&self) -> usize {
+		self.indices.len() / 3
+	}
+	fn num_vertices_of_face(&self, _face: usize) -> usize {
+		3
+	}
+	fn position(&self, face: usize, vert: usize) -> [f32; 3] {
+		let idx = self.indices[face * 3 + vert] as usize;
+		self.vertices[idx].position
+	}
+	fn normal(&self, face: usize, vert: usize) -> [f32; 3] {
+		let idx = self.indices[face * 3 + vert] as usize;
+		self.vertices[idx].normal
+	}
+	fn tex_coord(&self, face: usize, vert: usize) -> [f32; 2] {
+		let idx = self.indices[face * 3 + vert] as usize;
+		self.vertices[idx].tex_coords
+	}
+	fn set_tangent_encoded(&mut self, tangent: [f32; 4], face: usize, vert: usize) {
+		let idx = self.indices[face * 3 + vert] as usize;
+		self.vertices[idx].tangent = tangent;
+	}
 }
 
 pub async fn load_model(filename: &str, device: &wgpu::Device, queue: &wgpu::Queue, layout: &wgpu::BindGroupLayout) -> anyhow::Result<model::Model> {
@@ -67,72 +124,34 @@ pub async fn load_model(filename: &str, device: &wgpu::Device, queue: &wgpu::Que
 
 	let mut materials = vec![];
 	for m in obj_materials? {
-		let diffuse_texture = load_texture(&m.diffuse_texture, device, queue).await?;
-		let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout,
-			entries: &[
-				wgpu::BindGroupEntry {
-					binding: 0,
-					resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-				},
-				wgpu::BindGroupEntry {
-					binding: 1,
-					resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-				},
-			],
-			label: None,
-		});
+		let diffuse_texture = load_texture(&m.diffuse_texture, texture::TextureType::Diffuse, device, queue).await?;
+		let normal_texture = load_texture(&m.normal_texture, texture::TextureType::Normal, device, queue).await?;
 
-		materials.push(model::Material {
-			name: m.name,
+		materials.push(model::Material::new(
+			device, 
+			&m.name,
 			diffuse_texture,
-			bind_group,
-		});
+			normal_texture,
+			layout,
+		));
 	}
 
 	let meshes = models.into_iter().map(|m| {
-		let vertices = (0..m.mesh.positions.len() / 3).map(|i| {
-			if m.mesh.normals.is_empty() {
-				model::ModelVertex {
-					position: [
-						m.mesh.positions[i * 3],
-						m.mesh.positions[i * 3 + 1],
-						m.mesh.positions[i * 3 + 2],
-					],
-					tex_coords: [
-						m.mesh.texcoords[i * 2],
-						1.0 - m.mesh.texcoords[i * 2 + 1],
-					],
-					normal: [0.0, 0.0, 0.0],
-				}
-			} else {
-				model::ModelVertex {
-					position: [
-						m.mesh.positions[i * 3],
-						m.mesh.positions[i * 3 + 1],
-						m.mesh.positions[i * 3 + 2],
-					],
-					tex_coords: [
-						m.mesh.texcoords[i * 2],
-						1.0 - m.mesh.texcoords[i * 2 + 1],
-					],
-					normal: [
-						m.mesh.normals[i * 3],
-						m.mesh.normals[i * 3 + 1],
-						m.mesh.normals[i * 3 + 2],
-					],
-				}
-			}
-		}).collect::<Vec<_>>();
+		// create tobj
+		let mut mesh = TobjGeometry::from_tobj_mesh(&m.mesh);
 
+		// create tangents
+		mikktspace::generate_tangents(&mut mesh);
+
+		// create vertex & index buffer
 		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some(&format!("{:?} Vertex Buffer", filename)),
-			contents: bytemuck::cast_slice(&vertices),
+			contents: bytemuck::cast_slice(&mesh.vertices),
 			usage: wgpu::BufferUsages::VERTEX,
 		});
 		let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some(&format!("{:?} Index Buffer", filename)),
-			contents: bytemuck::cast_slice(&m.mesh.indices),
+			contents: bytemuck::cast_slice(&mesh.indices),
 			usage: wgpu::BufferUsages::INDEX,
 		});
 
@@ -140,10 +159,9 @@ pub async fn load_model(filename: &str, device: &wgpu::Device, queue: &wgpu::Que
 			name: filename.to_string(),
 			vertex_buffer,
 			index_buffer,
-			num_elements: m.mesh.indices.len() as u32,
+			num_elements: mesh.indices.len() as u32,
 			material: m.mesh.material_id.unwrap_or(0),
 		}
-
 	}).collect::<Vec<_>>();
 
 	Ok(model::Model {meshes, materials})

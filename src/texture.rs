@@ -1,6 +1,11 @@
 use image::GenericImageView;
 use anyhow::*;
 
+pub enum TextureType {
+	Diffuse,
+	Normal,
+}
+
 pub struct Texture {
 	#[allow(unused)]
 	pub texture: wgpu::Texture,
@@ -14,9 +19,10 @@ impl Texture {
 		queue: &wgpu::Queue,
 		bytes: &[u8],
 		label: &str,
+		ty: TextureType,
 	) -> Result<Self> {
 		let img = image::load_from_memory(bytes)?;
-		Self::from_image(device, queue, &img, Some(label))
+		Self::from_image(device, queue, &img, Some(label), ty)
 	}
 
 	pub fn from_image(
@@ -24,6 +30,7 @@ impl Texture {
 		queue: &wgpu::Queue,
 		img: &image::DynamicImage,
 		label: Option<&str>,
+		ty: TextureType,
 	) -> Result<Self> {
 		let rgba = img.to_rgba8();
 		let dimensions = img.dimensions();
@@ -40,7 +47,10 @@ impl Texture {
 				mip_level_count: 1,
 				sample_count: 1,
 				dimension: wgpu::TextureDimension::D2,
-				format: wgpu::TextureFormat::Rgba8UnormSrgb,
+				format: match ty {
+					TextureType::Diffuse => wgpu::TextureFormat::Rgba8UnormSrgb,
+					TextureType::Normal => wgpu::TextureFormat::Rgba8Unorm,
+				},
 				usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
 				view_formats: &[],
 			},
