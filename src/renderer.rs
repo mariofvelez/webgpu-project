@@ -109,7 +109,7 @@ impl Renderer {
 			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
 		});
 
-		let camera_pos: [f32; 3] = [0.0, 0.0, 0.0];
+		let camera_pos: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
 		let camera_pos_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Camera Pos Buffer"),
 			contents: bytemuck::cast_slice(&[camera_pos]),

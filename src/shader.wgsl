@@ -71,7 +71,7 @@ struct Light {
 var<uniform> light: Light;
 
 @group(2) @binding(4)
-var<uniform> camera_pos: vec3<f32>;
+var<uniform> camera_pos: vec4<f32>;
 
 fn fresnel_schlick(cos_theta: f32, f0: f32) -> f32 {
     return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
@@ -85,7 +85,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 	let bitangent = cross(in.normal, in.tangent.xyz) * in.tangent.w;
 	let obj_norm = normalize(tangent_norm.x * in.tangent.xyz + tangent_norm.y * bitangent + tangent_norm.z * in.normal);
 	let light_dir = normalize(light.position - in.position);
-	let eye_dir = normalize(camera_pos - in.position);
+	let eye_dir = normalize(camera_pos.xyz - in.position);
 
 	let reflect_strength = fresnel_schlick(max(dot(eye_dir, obj_norm), 0.0), material.diffuse_spec.w);
 	let cubemap_col = textureSample(cubemap_texture, cubemap_sampler, reflect(-eye_dir, obj_norm)).xyz * reflect_strength;

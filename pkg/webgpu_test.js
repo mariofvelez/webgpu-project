@@ -311,16 +311,16 @@ function __wasm_bindgen_func_elem_8099(arg0, arg1, arg2) {
     wasm.__wasm_bindgen_func_elem_8099(arg0, arg1, addHeapObject(arg2));
 }
 
-function __wasm_bindgen_func_elem_8108(arg0, arg1) {
-    wasm.__wasm_bindgen_func_elem_8108(arg0, arg1);
+function __wasm_bindgen_func_elem_8103(arg0, arg1, arg2, arg3) {
+    wasm.__wasm_bindgen_func_elem_8103(arg0, arg1, addHeapObject(arg2), addHeapObject(arg3));
 }
 
 function __wasm_bindgen_func_elem_9846(arg0, arg1, arg2) {
     wasm.__wasm_bindgen_func_elem_9846(arg0, arg1, addHeapObject(arg2));
 }
 
-function __wasm_bindgen_func_elem_8103(arg0, arg1, arg2, arg3) {
-    wasm.__wasm_bindgen_func_elem_8103(arg0, arg1, addHeapObject(arg2), addHeapObject(arg3));
+function __wasm_bindgen_func_elem_8108(arg0, arg1) {
+    wasm.__wasm_bindgen_func_elem_8108(arg0, arg1);
 }
 
 const __wbindgen_enum_GpuAddressMode = ["clamp-to-edge", "repeat", "mirror-repeat"];
