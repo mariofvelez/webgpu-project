@@ -76,14 +76,16 @@ pub struct SimpleMaterial {
 	pub diffuse_spec: [f32; 4],
 	pub roughness: f32,
 	pub metal: f32,
+	padding: [f32; 2],
 }
 
 impl SimpleMaterial {
 	pub fn new() -> Self {
 		Self {
-			diffuse_spec: [1.0, 0.0, 0.0, 0.5],
+			diffuse_spec: [1.0, 0.0, 0.0, 0.8],
 			roughness: 0.5,
 			metal: 0.0,
+			padding: [0.0; 2],
 		}
 	}
 }

@@ -1,3 +1,4 @@
+use std::fmt::format;
 use std::io::{BufReader, Cursor};
 use wgpu::util::DeviceExt;
 use crate::{model, texture, scene, renderer};
@@ -45,6 +46,16 @@ pub async fn load_binary(filename: &str) -> anyhow::Result<Vec<u8>> {
 pub async fn load_texture(filename: &str, ty: texture::TextureType, device: &wgpu::Device, queue: &wgpu::Queue) -> anyhow::Result<texture::Texture> {
 	let data = load_binary(filename).await?;
 	texture::Texture::from_bytes(device, queue, &data, filename, ty)
+}
+
+pub async fn load_cubemap_texture(foldername: &str, device: &wgpu::Device, queue: &wgpu::Queue) -> anyhow::Result<texture::Texture> {
+	let mut imgs = vec![];
+	for filename in ["right", "left", "top", "bottom", "front", "back"] {
+		let d = load_binary(format!("{}/{}.png", foldername, filename).as_str()).await?;
+		let img = image::load_from_memory(&d)?;
+		imgs.push(img);
+	}
+	texture::Texture::from_images(device, queue, &imgs, Some(foldername), texture::TextureType::Cubemap)
 }
 
 struct TobjGeometry<'a> {

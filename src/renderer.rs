@@ -1,4 +1,4 @@
-use crate::{camera, light, model::{self, Vertex, DrawModel}, scene, texture};
+use crate::{camera, light, model::{self, Vertex, DrawModel}, scene, texture, resources};
 use std::sync::Arc;
 use cgmath::SquareMatrix;
 use winit::window::Window;
@@ -13,18 +13,19 @@ pub struct Renderer {
 
 	pub texture_bind_group_layouts: [wgpu::BindGroupLayout; 2],
 
+	cubemap_bind_group: wgpu::BindGroup,
+
 	// uniform buffers
+	uniform_bind_group: wgpu::BindGroup,
 	// vertex
 	// TODO: maybe add instance buffer
-	camera_model_bind_group: wgpu::BindGroup,
 	camera_buffer: wgpu::Buffer,
 	model_buffer: wgpu::Buffer, // TODO: change to each model instance containing its own buffer, then bind each one accordingly
 
 	// fragment
-	simple_material_bind_group: wgpu::BindGroup,
 	simple_material_buffer: wgpu::Buffer,
-	light_bind_group: wgpu::BindGroup,
 	light_buffer: wgpu::Buffer,
+	camera_pos_buffer: wgpu::Buffer,
 
 	// rendering
 	depth_texture: texture::Texture,
@@ -81,6 +82,7 @@ impl Renderer {
 		// create bind group & layouts for
 		// - texture bind group for each material type
 		let texture_bind_group_layouts = model::MaterialType::create_texture_bind_group_layouts(&device);
+		
 		// - camera, model, and light
 		let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Camera Buffer"),
@@ -95,10 +97,39 @@ impl Renderer {
 			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
 		});
 
-		let camera_model_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+		let simple_material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: Some("Simple Material Buffer"),
+			contents: bytemuck::cast_slice(&[model::SimpleMaterial::new()]),
+			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+		});
+
+		let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: Some("Light Buffer"),
+			contents: bytemuck::cast_slice(&[light::LightUniform::new()]),
+			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+		});
+
+		let camera_pos: [f32; 3] = [0.0, 0.0, 0.0];
+		let camera_pos_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: Some("Camera Pos Buffer"),
+			contents: bytemuck::cast_slice(&[camera_pos]),
+			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+		});
+
+		let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 			entries: &[
-				wgpu::BindGroupLayoutEntry {
+				wgpu::BindGroupLayoutEntry { // camera uniform
 					binding: 0,
+					visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Buffer {
+						ty: wgpu::BufferBindingType::Uniform,
+						has_dynamic_offset: false,
+						min_binding_size: None,
+					},
+					count: None,
+				},
+				wgpu::BindGroupLayoutEntry { // model uniform
+					binding: 1,
 					visibility: wgpu::ShaderStages::VERTEX,
 					ty: wgpu::BindingType::Buffer {
 						ty: wgpu::BufferBindingType::Uniform,
@@ -107,9 +138,29 @@ impl Renderer {
 					},
 					count: None,
 				},
-				wgpu::BindGroupLayoutEntry {
-					binding: 1,
-					visibility: wgpu::ShaderStages::VERTEX,
+				wgpu::BindGroupLayoutEntry { // material uniform
+					binding: 2,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Buffer {
+						ty: wgpu::BufferBindingType::Uniform,
+						has_dynamic_offset: false,
+						min_binding_size: None,
+					},
+					count: None,
+				},
+				wgpu::BindGroupLayoutEntry { // light uniform
+					binding: 3,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Buffer {
+						ty: wgpu::BufferBindingType::Uniform,
+						has_dynamic_offset: false,
+						min_binding_size: None,
+					},
+					count: None,
+				},
+				wgpu::BindGroupLayoutEntry { // camera pos uniform
+					binding: 4,
+					visibility: wgpu::ShaderStages::FRAGMENT,
 					ty: wgpu::BindingType::Buffer {
 						ty: wgpu::BufferBindingType::Uniform,
 						has_dynamic_offset: false,
@@ -120,8 +171,8 @@ impl Renderer {
 			],
 			label: Some("camera_model_bind_group_layout"),
 		});
-		let camera_model_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &camera_model_bind_group_layout,
+		let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+			layout: &uniform_bind_group_layout,
 			entries: &[
 				wgpu::BindGroupEntry {
 					binding: 0,
@@ -131,70 +182,60 @@ impl Renderer {
 					binding: 1,
 					resource: model_buffer.as_entire_binding(),
 				},
+				wgpu::BindGroupEntry {
+					binding: 2,
+					resource: simple_material_buffer.as_entire_binding(),
+				},
+				wgpu::BindGroupEntry {
+					binding: 3,
+					resource: light_buffer.as_entire_binding(),
+				},
+				wgpu::BindGroupEntry {
+					binding: 4,
+					resource: camera_pos_buffer.as_entire_binding(),
+				},
 			],
 			label: Some("camera_bind_group"),
 		});
 
-		// add material uniform
-		let simple_material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("Simple Material Buffer"),
-			contents: bytemuck::cast_slice(&[model::SimpleMaterial::new()]),
-			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-		});
-		let simple_material_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+		let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture");
+
+		let cubemap_texture = resources::load_cubemap_texture("skybox", &device, &queue).await.unwrap();
+		let cubemap_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 			entries: &[
 				wgpu::BindGroupLayoutEntry {
 					binding: 0,
 					visibility: wgpu::ShaderStages::FRAGMENT,
-					ty: wgpu::BindingType::Buffer {
-						ty: wgpu::BufferBindingType::Uniform,
-						has_dynamic_offset: false,
-						min_binding_size: None,
+					ty: wgpu::BindingType::Texture {
+						multisampled: false,
+						view_dimension: wgpu::TextureViewDimension::Cube,
+						sample_type: wgpu::TextureSampleType::Float {filterable: true},
 					},
 					count: None,
-				}
+				},
+				wgpu::BindGroupLayoutEntry {
+					binding: 1,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+					count: None,
+				},
 			],
-			label: Some("simple_material_bind_group_layout"),
+			label: Some("cubemap_bind_group_layout"),
 		});
-		let simple_material_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &simple_material_bind_group_layout,
+		let cubemap_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+			layout: &cubemap_bind_group_layout,
 			entries: &[
 				wgpu::BindGroupEntry {
 					binding: 0,
-					resource: model_buffer.as_entire_binding(),
-				}
-			],
-			label: Some("simple_material_bind_group"),
-		});
-
-		let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("Light Buffer"),
-			contents: bytemuck::cast_slice(&[light::LightUniform::new()]),
-			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-		});
-		let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[wgpu::BindGroupLayoutEntry {
-				binding: 0,
-				visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-				ty: wgpu::BindingType::Buffer {
-					ty: wgpu::BufferBindingType::Uniform,
-					has_dynamic_offset: false,
-					min_binding_size: None,
+					resource: wgpu::BindingResource::TextureView(&cubemap_texture.view),
 				},
-				count: None,
-			}],
-			label: None,
+				wgpu::BindGroupEntry {
+					binding: 1,
+					resource: wgpu::BindingResource::Sampler(&cubemap_texture.sampler),
+				},
+			],
+			label: Some("cubemap_bind_group"),
 		});
-		let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &light_bind_group_layout,
-			entries: &[wgpu::BindGroupEntry {
-				binding: 0,
-				resource: light_buffer.as_entire_binding(),
-			}],
-			label: None,
-		});
-
-		let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture");
 
 		// create render pipeline for different material types
 		let render_pipeline = {
@@ -202,9 +243,8 @@ impl Renderer {
 				label: Some("Render Pipeline Layout"),
 				bind_group_layouts: &[
 					&texture_bind_group_layouts[1],
-					&camera_model_bind_group_layout,
-					&simple_material_bind_group_layout,
-					&light_bind_group_layout,
+					&cubemap_bind_group_layout,
+					&uniform_bind_group_layout,
 				],
 				immediate_size: 0,
 			});
@@ -234,14 +274,15 @@ impl Renderer {
 
 			texture_bind_group_layouts,
 
-			camera_model_bind_group,
+			cubemap_bind_group,
+
+			uniform_bind_group,
 			camera_buffer,
 			model_buffer,
 
-			simple_material_bind_group,
 			simple_material_buffer,
-			light_bind_group,
 			light_buffer,
+			camera_pos_buffer,
 
 			depth_texture,
 			render_pipeline,
@@ -267,6 +308,8 @@ impl Renderer {
 		// update camera buffer
 		let camera_uniform = camera::CameraUniform{ view_proj: camera.build_view_projection_matrix().into() };
 		self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
+		let camera_pos: [f32; 3] = camera.eye.into();
+		self.queue.write_buffer(&self.camera_pos_buffer, 0, bytemuck::cast_slice(&[camera_pos]));
 
 		// begin render pass
 		window.request_redraw();
@@ -314,9 +357,8 @@ impl Renderer {
 			});
 
 			render_pass.set_pipeline(&self.render_pipeline);
-			render_pass.set_bind_group(1, &self.camera_model_bind_group, &[]);
-			render_pass.set_bind_group(2, &self.simple_material_bind_group, &[]);
-			render_pass.set_bind_group(3, &self.light_bind_group, &[]);
+			render_pass.set_bind_group(1, &self.cubemap_bind_group, &[]);
+			render_pass.set_bind_group(2, &self.uniform_bind_group, &[]);
 
 			// draw scene
 			// sort by render pipeline

@@ -1,7 +1,7 @@
-@group(1) @binding(0)
+@group(2) @binding(0)
 var<uniform> camera: mat4x4<f32>;
 
-@group(1) @binding(1)
+@group(2) @binding(1)
 var<uniform> model: mat4x4<f32>;
 
 struct VertexInput {
@@ -50,20 +50,32 @@ var normal_texture: texture_2d<f32>;
 @group(0) @binding(3)
 var normal_sampler: sampler;
 
+@group(1) @binding(0)
+var cubemap_texture: texture_cube<f32>;
+@group(1) @binding(1)
+var cubemap_sampler: sampler;
+
 struct SimpleMaterial {
 	diffuse_spec: vec4<f32>,
 	roughness: f32,
 	metal: f32,
 };
-@group(2) @binding(0)
+@group(2) @binding(2)
 var<uniform> material: SimpleMaterial;
 
 struct Light {
 	position: vec3<f32>,
 	color: vec3<f32>,
 };
-@group(3) @binding(0)
+@group(2) @binding(3)
 var<uniform> light: Light;
+
+@group(2) @binding(4)
+var<uniform> camera_pos: vec3<f32>;
+
+fn fresnel_schlick(cos_theta: f32, f0: f32) -> f32 {
+    return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -72,14 +84,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 	let bitangent = cross(in.normal, in.tangent.xyz) * in.tangent.w;
 	let obj_norm = normalize(tangent_norm.x * in.tangent.xyz + tangent_norm.y * bitangent + tangent_norm.z * in.normal);
+	let light_dir = normalize(light.position - in.position);
+	let eye_dir = normalize(camera_pos - in.position);
+
+	let reflect_strength = fresnel_schlick(max(dot(eye_dir, obj_norm), 0.0), material.diffuse_spec.w);
+	let cubemap_col = textureSample(cubemap_texture, cubemap_sampler, reflect(-eye_dir, obj_norm)).xyz * reflect_strength;
 
 	let ambient_strength = 0.1;
 	let ambient_col = light.color * ambient_strength;
 
-	let light_dir = normalize(light.position - in.position);
-	let diffuse_strength = max(dot(obj_norm, light_dir), 0.0) * 0.9;
+	let diffuse_strength = max(dot(obj_norm, light_dir), 0.0) * (1.0 - reflect_strength);
 	let diffuse_col = light.color * diffuse_strength;
 
-	let result = (diffuse_col + ambient_col) * obj_col.xyz;
-	return vec4<f32>(result, obj_col.a);
+	let result = (diffuse_col + cubemap_col) * obj_col.xyz;
+	return vec4<f32>(result, obj_col.w);
 }

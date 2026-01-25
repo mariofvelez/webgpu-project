@@ -4,6 +4,7 @@ use anyhow::*;
 pub enum TextureType {
 	Diffuse,
 	Normal,
+	Cubemap,
 }
 
 pub struct Texture {
@@ -22,23 +23,26 @@ impl Texture {
 		ty: TextureType,
 	) -> Result<Self> {
 		let img = image::load_from_memory(bytes)?;
-		Self::from_image(device, queue, &img, Some(label), ty)
+		Self::from_images(device, queue, &vec![img], Some(label), ty)
 	}
 
-	pub fn from_image(
+	pub fn from_images(
 		device: &wgpu::Device,
 		queue: &wgpu::Queue,
-		img: &image::DynamicImage,
+		imgs: &Vec<image::DynamicImage>,
 		label: Option<&str>,
 		ty: TextureType,
 	) -> Result<Self> {
-		let rgba = img.to_rgba8();
-		let dimensions = img.dimensions();
+		let dimensions = imgs[0].dimensions();
+		println!("dimensions: {:?}", dimensions);
 
 		let texture_size = wgpu::Extent3d {
 			width: dimensions.0,
 			height: dimensions.1,
-			depth_or_array_layers: 1,
+			depth_or_array_layers: match ty {
+				TextureType::Cubemap => 6,
+				_ => 1,
+			},
 		};
 		let texture = device.create_texture(
 			&wgpu::TextureDescriptor {
@@ -48,31 +52,49 @@ impl Texture {
 				sample_count: 1,
 				dimension: wgpu::TextureDimension::D2,
 				format: match ty {
-					TextureType::Diffuse => wgpu::TextureFormat::Rgba8UnormSrgb,
 					TextureType::Normal => wgpu::TextureFormat::Rgba8Unorm,
+					_ => wgpu::TextureFormat::Rgba8UnormSrgb,
 				},
-				usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+				usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
 				view_formats: &[],
 			},
 		);
 
-		queue.write_texture(
-			wgpu::TexelCopyTextureInfo {
-				texture: &texture,
-				mip_level: 0,
-				origin: wgpu::Origin3d::ZERO,
-				aspect: wgpu::TextureAspect::All,
-			},
-			&rgba,
-			wgpu::TexelCopyBufferLayout {
-				offset: 0,
-				bytes_per_row: Some(4 * dimensions.0),
-				rows_per_image: Some(dimensions.1),
-			},
-			texture_size,
-		);
+		for (idx, img) in imgs.iter().enumerate() {
+			let rgba = img.to_rgba8();
+			queue.write_texture(
+				wgpu::TexelCopyTextureInfo {
+					texture: &texture,
+					mip_level: 0,
+					origin: wgpu::Origin3d {
+						x: 0,
+						y: 0,
+						z: idx as u32,
+					},
+					aspect: wgpu::TextureAspect::All,
+				},
+				&rgba,
+				wgpu::TexelCopyBufferLayout {
+					offset: 0,
+					bytes_per_row: Some(4 * dimensions.0),
+					rows_per_image: Some(dimensions.1),
+				},
+				wgpu::Extent3d {
+					width: dimensions.0,
+					height: dimensions.1,
+					depth_or_array_layers: 1,
+				},
+			);
+		}
 
-		let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+		let view = texture.create_view(&wgpu::TextureViewDescriptor {
+			label: Some("Texture View"),
+			dimension: match ty {
+				TextureType::Cubemap => Some(wgpu::TextureViewDimension::Cube),
+				_ => Some(wgpu::TextureViewDimension::default())
+			},
+			..Default::default()
+		});
 		let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
 			address_mode_u: wgpu::AddressMode::ClampToEdge,
 			address_mode_v: wgpu::AddressMode::ClampToEdge,
