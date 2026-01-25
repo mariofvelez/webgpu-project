@@ -1,6 +1,6 @@
 use std::io::{BufReader, Cursor};
 use wgpu::util::DeviceExt;
-use crate::{model, texture};
+use crate::{model, texture, scene, renderer};
 
 #[cfg(target_arch = "wasm32")]
 fn format_url(filename: &str) -> reqwest::Url {
@@ -104,7 +104,7 @@ impl <'a>mikktspace::Geometry for TobjGeometry<'a> {
 	}
 }
 
-pub async fn load_model(filename: &str, device: &wgpu::Device, queue: &wgpu::Queue, layout: &wgpu::BindGroupLayout) -> anyhow::Result<model::Model> {
+pub async fn load_model(filename: &str, renderer: &renderer::Renderer, scene: &mut scene::Scene) -> anyhow::Result<usize> {
 	let obj_text = load_string(filename).await?;
 	let obj_cursor = Cursor::new(obj_text);
 	let mut obj_reader = BufReader::new(obj_cursor);
@@ -122,18 +122,35 @@ pub async fn load_model(filename: &str, device: &wgpu::Device, queue: &wgpu::Que
 		},
 	).await?;
 
-	let mut materials = vec![];
+	let mut material_ids = vec![]; // mapped ids to scene materials
+	material_ids.push(0);
 	for m in obj_materials? {
-		let diffuse_texture = load_texture(&m.diffuse_texture, texture::TextureType::Diffuse, device, queue).await?;
-		let normal_texture = load_texture(&m.normal_texture, texture::TextureType::Normal, device, queue).await?;
 
-		materials.push(model::Material::new(
-			device, 
-			&m.name,
-			diffuse_texture,
-			normal_texture,
-			layout,
-		));
+		if let Some(material_id) = scene.get_material(&m.name) {
+			material_ids.push(material_id);
+		} else {
+			let diffuse_texture = load_texture(
+				&m.diffuse_texture,
+				texture::TextureType::Diffuse,
+				&renderer.device,
+				&renderer.queue,
+			).await?;
+			let normal_texture = load_texture(
+				&m.normal_texture,
+				texture::TextureType::Normal,
+				&renderer.device,
+				&renderer.queue,
+			).await?;
+
+			let material = model::Material::new(
+				&renderer.device, 
+				&m.name,
+				diffuse_texture,
+				normal_texture,
+				&renderer.texture_bind_group_layouts[1],
+			);
+			material_ids.push(scene.add_material(material));
+		}
 	}
 
 	let meshes = models.into_iter().map(|m| {
@@ -144,25 +161,27 @@ pub async fn load_model(filename: &str, device: &wgpu::Device, queue: &wgpu::Que
 		mikktspace::generate_tangents(&mut mesh);
 
 		// create vertex & index buffer
-		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+		let vertex_buffer = renderer.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some(&format!("{:?} Vertex Buffer", filename)),
 			contents: bytemuck::cast_slice(&mesh.vertices),
 			usage: wgpu::BufferUsages::VERTEX,
 		});
-		let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+		let index_buffer = renderer.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some(&format!("{:?} Index Buffer", filename)),
 			contents: bytemuck::cast_slice(&mesh.indices),
 			usage: wgpu::BufferUsages::INDEX,
 		});
+
+		let material_id = material_ids[m.mesh.material_id.unwrap_or(0)];
 
 		model::Mesh {
 			name: filename.to_string(),
 			vertex_buffer,
 			index_buffer,
 			num_elements: mesh.indices.len() as u32,
-			material: m.mesh.material_id.unwrap_or(0),
+			material: material_id,
 		}
 	}).collect::<Vec<_>>();
 
-	Ok(model::Model {meshes, materials})
+	Ok(scene.add_model(model::Model { meshes }))
 }
